@@ -2002,16 +2002,31 @@ int rtsp_request_header_read(char *str,
 			} else if (!strncasecmp(field,
 						RTSP_HEADER_DATE,
 						strlen(RTSP_HEADER_DATE))) {
-				/* 'Date' */
+				/* 'Date' — tolerant-parse: legacy Mambo/Bebop
+				 * firmware sends non-ISO Date strings in
+				 * ANNOUNCE/GET_PARAMETER requests.  The parsed
+				 * value is used only when re-serialising an
+				 * outbound request (rtsp_request_header_write
+				 * guards on date > 0), so leaving date = 0 on
+				 * a parse failure is safe — the header is
+				 * simply omitted from any forwarded request.
+				 * Mirror the response-side approach: warn and
+				 * continue rather than dropping the message.
+				 */
 				uint64_t epoch_sec = 0;
 				int32_t utc_offset_sec = 0;
 				ret = time_local_parse(
 					value, &epoch_sec, &utc_offset_sec);
 				if (ret < 0) {
-					ULOG_ERRNO("time_local_parse", -ret);
-					return ret;
+					ULOGW("%s: ignoring unparseable Date"
+					      " header value '%s' (err=%d)",
+					      __func__, value, -ret);
+					/* date stays 0 (cleared by
+					 * rtsp_request_header_clear above) */
+					ret = 0;
+				} else {
+					header->date = epoch_sec;
 				}
-				header->date = epoch_sec;
 
 			} else if (!strncasecmp(field,
 						RTSP_HEADER_SESSION,
